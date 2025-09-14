@@ -1,6 +1,6 @@
 # Discord Community Management Bot
 
-A comprehensive Discord bot designed for advanced community management with moderation tools, auto-moderation, logging, and user management features.
+A comprehensive Discord bot designed for advanced community management with **50+ commands** including moderation tools, role management, channel management, server configuration, utility commands, fun commands, auto-moderation, logging, and user management features.
 
 ## 🚀 Features
 
@@ -12,13 +12,51 @@ A comprehensive Discord bot designed for advanced community management with mode
 - **`/unblacklist`** - Remove users from blacklist
 - **`/viewuser`** - View detailed user information and moderation history
 
-### Advanced Features
+### Advanced Moderation Features
 - **`/warn`** - Issue warnings to users
 - **`/mute`** - Timeout users (1 minute to 7 days)
 - **`/unmute`** - Remove timeout from users
 - **`/purge`** - Bulk delete messages (with optional user filter)
 - **`/automod`** - Configure auto-moderation settings
 - **`/stats`** - View server statistics
+
+### Role Management Commands
+- **`/addrole`** - Add a role to a user
+- **`/removerole`** - Remove a role from a user
+- **`/createrole`** - Create a new role with custom properties
+- **`/deleterole`** - Delete a role
+- **`/roleinfo`** - Get detailed information about a role
+- **`/massrole`** - Add or remove roles from multiple users at once
+
+### Channel Management Commands
+- **`/createchannel`** - Create text, voice, or category channels
+- **`/deletechannel`** - Delete channels
+- **`/lockchannel`** - Lock a channel (prevent messages)
+- **`/unlockchannel`** - Unlock a channel
+- **`/slowmode`** - Set slowmode for channels (0-21600 seconds)
+- **`/channelinfo`** - Get detailed channel information
+
+### Server Configuration Commands
+- **`/setprefix`** - Set custom bot prefix for the server
+- **`/setwelcome`** - Configure welcome channel and message
+- **`/setleave`** - Configure leave channel and message
+- **`/setlogchannel`** - Set moderation log channel
+- **`/serverinfo`** - Get detailed server information
+- **`/servericon`** - Display server icon
+
+### Utility Commands
+- **`/avatar`** - Get user avatars in high resolution
+- **`/userinfo`** - Get detailed user information
+- **`/botinfo`** - Get bot statistics and information
+- **`/ping`** - Check bot latency
+- **`/uptime`** - Check bot uptime
+
+### Fun Commands
+- **`/8ball`** - Ask the magic 8-ball questions
+- **`/dice`** - Roll dice with custom sides and count
+- **`/coinflip`** - Flip a coin
+- **`/joke`** - Get random jokes
+- **`/meme`** - Get random memes from Imgflip API
 
 ### Auto-Moderation
 - **Spam Detection** - Automatically detects and prevents spam
