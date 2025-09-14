@@ -299,7 +299,102 @@ const commands = [
                     { name: 'Timeout', value: 'timeout' },
                     { name: 'Kick', value: 'kick' }
                 ))
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    new SlashCommandBuilder()
+        .setName('avatar')
+        .setDescription('View a user\'s avatar in high quality')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user whose avatar you want to view')
+                .setRequired(false))
+        .addStringOption(option =>
+            option.setName('size')
+                .setDescription('Avatar size')
+                .setRequired(false)
+                .addChoices(
+                    { name: 'Small (128px)', value: '128' },
+                    { name: 'Medium (256px)', value: '256' },
+                    { name: 'Large (512px)', value: '512' },
+                    { name: 'Extra Large (1024px)', value: '1024' },
+                    { name: 'Maximum (2048px)', value: '2048' }
+                )),
+
+    new SlashCommandBuilder()
+        .setName('role')
+        .setDescription('Advanced role management system')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('create')
+                .setDescription('Create a new role with advanced customization')
+                .addStringOption(option =>
+                    option.setName('name')
+                        .setDescription('Role name')
+                        .setRequired(true)
+                        .setMaxLength(100))
+                .addStringOption(option =>
+                    option.setName('color')
+                        .setDescription('Role color (hex code, e.g., #ff0000)')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option.setName('mentionable')
+                        .setDescription('Whether the role is mentionable')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option.setName('hoist')
+                        .setDescription('Whether the role is displayed separately')
+                        .setRequired(false))
+                .addStringOption(option =>
+                    option.setName('permissions')
+                        .setDescription('Role permissions (comma-separated)')
+                        .setRequired(false)
+                        .addChoices(
+                            { name: 'Send Messages', value: 'SendMessages' },
+                            { name: 'Manage Messages', value: 'ManageMessages' },
+                            { name: 'Manage Channels', value: 'ManageChannels' },
+                            { name: 'Manage Roles', value: 'ManageRoles' },
+                            { name: 'Kick Members', value: 'KickMembers' },
+                            { name: 'Ban Members', value: 'BanMembers' },
+                            { name: 'Administrator', value: 'Administrator' }
+                        )))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('edit')
+                .setDescription('Edit an existing role')
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role to edit')
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option.setName('name')
+                        .setDescription('New role name')
+                        .setRequired(false)
+                        .setMaxLength(100))
+                .addStringOption(option =>
+                    option.setName('color')
+                        .setDescription('New role color (hex code)')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option.setName('mentionable')
+                        .setDescription('Whether the role is mentionable')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option.setName('hoist')
+                        .setDescription('Whether the role is displayed separately')
+                        .setRequired(false)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('delete')
+                .setDescription('Delete a role')
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role to delete')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('list')
+                .setDescription('List all server roles with details'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
 ];
 
 // Register slash commands
@@ -432,6 +527,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 break;
             case 'automod_settings':
                 await handleAutoModSettings(interaction);
+                break;
+            case 'avatar':
+                await handleAvatar(interaction);
+                break;
+            case 'role':
+                await handleRole(interaction);
                 break;
         }
     } catch (error) {
@@ -823,6 +924,269 @@ async function handleAutoModSettings(interaction) {
     );
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleAvatar(interaction) {
+    const user = interaction.options.getUser('user') || interaction.user;
+    const size = interaction.options.getString('size') || '1024';
+
+    try {
+        const embed = embedManager.createAvatarEmbed(user, size);
+        await interaction.reply({ embeds: [embed] });
+    } catch (error) {
+        const embed = embedManager.createErrorEmbed(
+            'Avatar Error',
+            'Failed to fetch avatar. Please try again.',
+            'avatar'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+async function handleRole(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+
+    try {
+        switch (subcommand) {
+            case 'create':
+                await handleRoleCreate(interaction);
+                break;
+            case 'edit':
+                await handleRoleEdit(interaction);
+                break;
+            case 'delete':
+                await handleRoleDelete(interaction);
+                break;
+            case 'list':
+                await handleRoleList(interaction);
+                break;
+        }
+    } catch (error) {
+        console.error('Role command error:', error);
+        const embed = embedManager.createErrorEmbed(
+            'Role Management Error',
+            'An error occurred while processing the role command.',
+            subcommand
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+async function handleRoleCreate(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You need the Manage Roles permission to create roles.',
+            'role_create'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const name = interaction.options.getString('name');
+    const color = interaction.options.getString('color');
+    const mentionable = interaction.options.getBoolean('mentionable') || false;
+    const hoist = interaction.options.getBoolean('hoist') || false;
+    const permissions = interaction.options.getString('permissions');
+
+    try {
+        // Parse color
+        let roleColor = 0;
+        if (color) {
+            const hexColor = color.replace('#', '');
+            roleColor = parseInt(hexColor, 16);
+        }
+
+        // Parse permissions
+        let rolePermissions = 0;
+        if (permissions) {
+            const permissionFlags = permissions.split(',').map(p => p.trim());
+            for (const flag of permissionFlags) {
+                if (PermissionFlagsBits[flag]) {
+                    rolePermissions |= PermissionFlagsBits[flag];
+                }
+            }
+        }
+
+        // Create role
+        const role = await interaction.guild.roles.create({
+            name: name,
+            color: roleColor,
+            mentionable: mentionable,
+            hoist: hoist,
+            permissions: rolePermissions,
+            reason: `Created by ${interaction.user.tag}`
+        });
+
+        // Log the action
+        logger.createLogEntry('INFO', 'Role created', {
+            user: interaction.user,
+            action: 'role_create',
+            server: interaction.guild.name,
+            details: `Role: ${role.name} (${role.id})`
+        });
+
+        const embed = embedManager.createRoleEmbed(role, 'created');
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Role creation error:', error);
+        const embed = embedManager.createErrorEmbed(
+            'Role Creation Failed',
+            'Failed to create role. Please check your permissions and try again.',
+            'role_create'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+async function handleRoleEdit(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You need the Manage Roles permission to edit roles.',
+            'role_edit'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const role = interaction.options.getRole('role');
+    const name = interaction.options.getString('name');
+    const color = interaction.options.getString('color');
+    const mentionable = interaction.options.getBoolean('mentionable');
+    const hoist = interaction.options.getBoolean('hoist');
+
+    try {
+        const updateData = {};
+
+        if (name) updateData.name = name;
+        if (color) {
+            const hexColor = color.replace('#', '');
+            updateData.color = parseInt(hexColor, 16);
+        }
+        if (mentionable !== null) updateData.mentionable = mentionable;
+        if (hoist !== null) updateData.hoist = hoist;
+
+        if (Object.keys(updateData).length === 0) {
+            const embed = embedManager.createErrorEmbed(
+                'No Changes',
+                'No changes were specified for the role.',
+                'role_edit'
+            );
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        await role.edit(updateData, `Edited by ${interaction.user.tag}`);
+
+        // Log the action
+        logger.createLogEntry('INFO', 'Role edited', {
+            user: interaction.user,
+            action: 'role_edit',
+            server: interaction.guild.name,
+            details: `Role: ${role.name} (${role.id})`
+        });
+
+        const embed = embedManager.createRoleEmbed(role, 'edited');
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Role edit error:', error);
+        const embed = embedManager.createErrorEmbed(
+            'Role Edit Failed',
+            'Failed to edit role. Please check your permissions and try again.',
+            'role_edit'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+async function handleRoleDelete(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You need the Manage Roles permission to delete roles.',
+            'role_delete'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const role = interaction.options.getRole('role');
+
+    try {
+        // Check if role is managed
+        if (role.managed) {
+            const embed = embedManager.createErrorEmbed(
+                'Cannot Delete Role',
+                'This role is managed by an integration and cannot be deleted.',
+                'role_delete'
+            );
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        // Check if role is @everyone
+        if (role.id === interaction.guild.id) {
+            const embed = embedManager.createErrorEmbed(
+                'Cannot Delete Role',
+                'The @everyone role cannot be deleted.',
+                'role_delete'
+            );
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        const roleName = role.name;
+        const roleId = role.id;
+
+        await role.delete(`Deleted by ${interaction.user.tag}`);
+
+        // Log the action
+        logger.createLogEntry('INFO', 'Role deleted', {
+            user: interaction.user,
+            action: 'role_delete',
+            server: interaction.guild.name,
+            details: `Role: ${roleName} (${roleId})`
+        });
+
+        const embed = embedManager.createSuccessEmbed(
+            'Role Deleted',
+            `Successfully deleted role **${roleName}**`,
+            { roleId: roleId }
+        );
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Role delete error:', error);
+        const embed = embedManager.createErrorEmbed(
+            'Role Delete Failed',
+            'Failed to delete role. Please check your permissions and try again.',
+            'role_delete'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+async function handleRoleList(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You need the Manage Roles permission to list roles.',
+            'role_list'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    try {
+        const roles = interaction.guild.roles.cache.array();
+        const embed = embedManager.createRoleListEmbed(roles);
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Role list error:', error);
+        const embed = embedManager.createErrorEmbed(
+            'Role List Failed',
+            'Failed to fetch role list. Please try again.',
+            'role_list'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
 }
 
 // Login

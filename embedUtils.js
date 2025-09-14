@@ -431,6 +431,176 @@ class EmbedManager {
             action
         );
     }
+
+    /**
+     * Create a premium avatar embed
+     * @param {Object} user - Discord user object
+     * @param {string} size - Avatar size
+     * @returns {EmbedBuilder}
+     */
+    createAvatarEmbed(user, size = '1024') {
+        const avatarUrl = user.displayAvatarURL({ 
+            dynamic: true, 
+            size: parseInt(size),
+            format: 'png'
+        });
+
+        const embed = new EmbedBuilder()
+            .setTitle(`${ACTION_ICONS.info} Avatar Viewer`)
+            .setDescription(`**${user.tag}'s Avatar**`)
+            .setImage(avatarUrl)
+            .setColor(COLORS.ANIMATED_PURPLE)
+            .setTimestamp()
+            .setFooter({ 
+                text: `Premium Avatar Viewer • ${size}px`,
+                iconURL: this.botIcon
+            });
+
+        // Add user information
+        embed.addFields({
+            name: '👤 User Information',
+            value: `**Username:** ${user.tag}\n**ID:** \`${user.id}\`\n**Account Type:** ${user.bot ? 'Bot' : 'User'}`,
+            inline: true
+        });
+
+        // Add avatar details
+        embed.addFields({
+            name: '🖼️ Avatar Details',
+            value: `**Size:** ${size}px\n**Format:** PNG\n**Dynamic:** ${user.avatar ? 'Yes' : 'No'}\n**Animated:** ${user.avatar?.startsWith('a_') ? 'Yes' : 'No'}`,
+            inline: true
+        });
+
+        // Add download links
+        const downloadLinks = [];
+        if (size !== '128') downloadLinks.push(`[128px](${user.displayAvatarURL({ size: 128, format: 'png' })})`);
+        if (size !== '256') downloadLinks.push(`[256px](${user.displayAvatarURL({ size: 256, format: 'png' })})`);
+        if (size !== '512') downloadLinks.push(`[512px](${user.displayAvatarURL({ size: 512, format: 'png' })})`);
+        if (size !== '1024') downloadLinks.push(`[1024px](${user.displayAvatarURL({ size: 1024, format: 'png' })})`);
+        if (size !== '2048') downloadLinks.push(`[2048px](${user.displayAvatarURL({ size: 2048, format: 'png' })})`);
+
+        if (downloadLinks.length > 0) {
+            embed.addFields({
+                name: '📥 Download Links',
+                value: downloadLinks.join(' • '),
+                inline: false
+            });
+        }
+
+        return embed;
+    }
+
+    /**
+     * Create a role management embed
+     * @param {Object} role - Discord role object
+     * @param {string} action - Action performed
+     * @returns {EmbedBuilder}
+     */
+    createRoleEmbed(role, action) {
+        const embed = new EmbedBuilder()
+            .setTitle(`${ACTION_ICONS.automod} Role ${action.charAt(0).toUpperCase() + action.slice(1)}`)
+            .setDescription(`**${role.name}** has been ${action}d successfully`)
+            .setColor(role.color || COLORS.INFO)
+            .setTimestamp()
+            .setFooter({ 
+                text: `Premium Role Management • ${action}`,
+                iconURL: this.botIcon
+            });
+
+        // Role details
+        embed.addFields({
+            name: '🎭 Role Information',
+            value: `**Name:** ${role.name}\n**ID:** \`${role.id}\`\n**Color:** ${role.hexColor}\n**Position:** ${role.position}`,
+            inline: true
+        });
+
+        // Role properties
+        embed.addFields({
+            name: '⚙️ Properties',
+            value: `**Mentionable:** ${role.mentionable ? 'Yes' : 'No'}\n**Hoisted:** ${role.hoist ? 'Yes' : 'No'}\n**Managed:** ${role.managed ? 'Yes' : 'No'}\n**Members:** ${role.members.size}`,
+            inline: true
+        });
+
+        // Permissions (if any)
+        if (role.permissions.bitfield > 0) {
+            const permissions = role.permissions.toArray();
+            const keyPermissions = permissions.filter(p => 
+                ['Administrator', 'ManageGuild', 'ManageRoles', 'ManageChannels', 'KickMembers', 'BanMembers'].includes(p)
+            );
+            
+            if (keyPermissions.length > 0) {
+                embed.addFields({
+                    name: '🔑 Key Permissions',
+                    value: keyPermissions.map(p => `• ${p}`).join('\n'),
+                    inline: false
+                });
+            }
+        }
+
+        return embed;
+    }
+
+    /**
+     * Create a role list embed
+     * @param {Array} roles - Array of role objects
+     * @returns {EmbedBuilder}
+     */
+    createRoleListEmbed(roles) {
+        const embed = new EmbedBuilder()
+            .setTitle(`${ACTION_ICONS.automod} Server Roles`)
+            .setDescription(`**${roles.length}** roles found in this server`)
+            .setColor(COLORS.INFO)
+            .setTimestamp()
+            .setFooter({ 
+                text: 'Premium Role Management • Complete List',
+                iconURL: this.botIcon
+            });
+
+        // Group roles by position
+        const sortedRoles = roles.sort((a, b) => b.position - a.position);
+        const roleGroups = {
+            managed: sortedRoles.filter(r => r.managed),
+            custom: sortedRoles.filter(r => !r.managed && r.id !== r.guild.id),
+            everyone: sortedRoles.filter(r => r.id === r.guild.id)
+        };
+
+        // Add managed roles
+        if (roleGroups.managed.length > 0) {
+            const managedList = roleGroups.managed.slice(0, 10).map(role => 
+                `${role.hexColor} **${role.name}** ${role.mentionable ? '🔔' : '🔕'} (${role.members.size} members)`
+            ).join('\n');
+            
+            embed.addFields({
+                name: '🤖 Managed Roles',
+                value: managedList + (roleGroups.managed.length > 10 ? `\n*... and ${roleGroups.managed.length - 10} more*` : ''),
+                inline: false
+            });
+        }
+
+        // Add custom roles
+        if (roleGroups.custom.length > 0) {
+            const customList = roleGroups.custom.slice(0, 15).map(role => 
+                `${role.hexColor} **${role.name}** ${role.mentionable ? '🔔' : '🔕'} (${role.members.size} members)`
+            ).join('\n');
+            
+            embed.addFields({
+                name: '🎭 Custom Roles',
+                value: customList + (roleGroups.custom.length > 15 ? `\n*... and ${roleGroups.custom.length - 15} more*` : ''),
+                inline: false
+            });
+        }
+
+        // Add everyone role
+        if (roleGroups.everyone.length > 0) {
+            const everyoneRole = roleGroups.everyone[0];
+            embed.addFields({
+                name: '👥 Everyone Role',
+                value: `${everyoneRole.hexColor} **${everyoneRole.name}** ${everyoneRole.mentionable ? '🔔' : '🔕'} (${everyoneRole.members.size} members)`,
+                inline: false
+            });
+        }
+
+        return embed;
+    }
 }
 
 // Export the embed manager instance
