@@ -15,7 +15,9 @@
     "sqlite3": "^5.1.6",
     "moment": "^2.29.4",
     "chalk": "^4.1.2",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.0",
+    "node-fetch": "^2.7.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
