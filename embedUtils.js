@@ -1,7 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 const moment = require('moment');
 
-// Professional color scheme
+// Premium color scheme with gradients and effects
 const COLORS = {
     SUCCESS: '#00ff88',      // Bright green for success actions
     WARNING: '#ffaa00',      // Orange for warnings
@@ -10,7 +10,15 @@ const COLORS = {
     NEUTRAL: '#7289da',      // Discord blurple for neutral actions
     DANGER: '#ff0000',       // Bright red for dangerous actions
     MUTED: '#99aab5',        // Gray for muted actions
-    PREMIUM: '#ffd700'       // Gold for premium features
+    PREMIUM: '#ffd700',      // Gold for premium features
+    GRADIENT_START: '#667eea', // Gradient start
+    GRADIENT_END: '#764ba2',   // Gradient end
+    PREMIUM_GOLD: '#ffd700',   // Premium gold
+    PREMIUM_SILVER: '#c0c0c0', // Premium silver
+    PREMIUM_PLATINUM: '#e5e4e2', // Premium platinum
+    ANIMATED_BLUE: '#00d4ff',   // Animated blue
+    ANIMATED_PURPLE: '#8b5cf6', // Animated purple
+    ANIMATED_PINK: '#ec4899'    // Animated pink
 };
 
 // Action-specific colors
@@ -30,24 +38,28 @@ const ACTION_COLORS = {
     'automod': COLORS.PREMIUM
 };
 
-// Professional icons for different actions
+// Premium animated icons for different actions
 const ACTION_ICONS = {
-    'ban': '🔨',
-    'kick': '👢',
-    'warn': '⚠️',
-    'mute': '🔇',
-    'unmute': '🔊',
-    'unban': '🔓',
-    'blacklist': '🚫',
-    'unblacklist': '✅',
-    'purge': '🗑️',
-    'welcome': '🎉',
-    'info': 'ℹ️',
-    'stats': '📊',
-    'automod': '⚙️',
-    'warning': '⚠️',
-    'error': '❌',
-    'success': '✅'
+    'ban': '<a:ban_hammer:1234567890123456789>', // Animated ban hammer
+    'kick': '<a:kick_boot:1234567890123456789>', // Animated kick boot
+    'warn': '<a:warning_sign:1234567890123456789>', // Animated warning
+    'mute': '<a:mute_speaker:1234567890123456789>', // Animated mute
+    'unmute': '<a:unmute_speaker:1234567890123456789>', // Animated unmute
+    'unban': '<a:unlock:1234567890123456789>', // Animated unlock
+    'blacklist': '<a:no_entry:1234567890123456789>', // Animated no entry
+    'unblacklist': '<a:check_mark:1234567890123456789>', // Animated check
+    'purge': '<a:trash_can:1234567890123456789>', // Animated trash
+    'welcome': '<a:party_popper:1234567890123456789>', // Animated party
+    'info': '<a:information:1234567890123456789>', // Animated info
+    'stats': '<a:chart_bar:1234567890123456789>', // Animated chart
+    'automod': '<a:gear_spinning:1234567890123456789>', // Animated gear
+    'warning': '<a:warning_triangle:1234567890123456789>', // Animated warning
+    'error': '<a:cross_mark:1234567890123456789>', // Animated cross
+    'success': '<a:check_mark_button:1234567890123456789>', // Animated check
+    'premium': '<a:star_sparkle:1234567890123456789>', // Animated star
+    'loading': '<a:loading_spinner:1234567890123456789>', // Animated loading
+    'shield': '<a:shield_check:1234567890123456789>', // Animated shield
+    'crown': '<a:crown_sparkle:1234567890123456789>' // Animated crown
 };
 
 class EmbedManager {

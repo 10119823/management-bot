@@ -1,8 +1,11 @@
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits, SlashCommandBuilder, REST, Routes, Collection, Events } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits, SlashCommandBuilder, REST, Routes, Collection, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
 const moment = require('moment');
 const chalk = require('chalk');
 const embedManager = require('./embedUtils');
+const dashboard = require('./dashboard');
+const logger = require('./logger');
+const autoMod = require('./autoMod');
 require('dotenv').config();
 
 // Initialize Discord client
@@ -263,7 +266,40 @@ const commands = [
     new SlashCommandBuilder()
         .setName('stats')
         .setDescription('View server statistics')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+
+    new SlashCommandBuilder()
+        .setName('dashboard')
+        .setDescription('Open the premium server dashboard')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+
+    new SlashCommandBuilder()
+        .setName('automod')
+        .setDescription('Configure auto-moderation settings')
+        .addStringOption(option =>
+            option.setName('setting')
+                .setDescription('Setting to configure')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'Spam Protection', value: 'spam' },
+                    { name: 'Profanity Filter', value: 'profanity' },
+                    { name: 'Caps Filter', value: 'caps' },
+                    { name: 'Link Filter', value: 'links' },
+                    { name: 'Mention Filter', value: 'mentions' },
+                    { name: 'Invite Filter', value: 'invites' }
+                ))
+        .addStringOption(option =>
+            option.setName('action')
+                .setDescription('Action to take')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'Delete', value: 'delete' },
+                    { name: 'Warn', value: 'warn' },
+                    { name: 'Delete & Warn', value: 'delete_and_warn' },
+                    { name: 'Timeout', value: 'timeout' },
+                    { name: 'Kick', value: 'kick' }
+                ))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ];
 
 // Register slash commands
@@ -314,19 +350,35 @@ client.on(Events.MessageCreate, async (message) => {
     // Update last seen
     db.run('UPDATE user_profiles SET last_seen = CURRENT_TIMESTAMP WHERE user_id = ?', [message.author.id]);
 
-    // Auto-moderation for spam
-    const spamThreshold = 5;
-    const spamTimeframe = 10000; // 10 seconds
-
+    // Advanced auto-moderation
     if (message.guild) {
-        const userMessages = message.channel.messages.cache
-            .filter(m => m.author.id === message.author.id && Date.now() - m.createdTimestamp < spamTimeframe)
-            .size();
+        try {
+            const actionTaken = await autoMod.processMessage(message);
+            
+            // Log message activity
+            logger.createLogEntry('INFO', 'Message processed', {
+                user: message.author,
+                action: 'message_sent',
+                server: message.guild.name,
+                details: `Channel: #${message.channel.name}`
+            });
 
-        if (userMessages >= spamThreshold) {
-            await message.delete();
-            const warning = await message.channel.send(`${message.author}, please don't spam!`);
-            setTimeout(() => warning.delete(), 5000);
+            if (actionTaken) {
+                logger.createLogEntry('WARN', 'Auto-moderation action taken', {
+                    user: message.author,
+                    action: 'auto_moderation',
+                    server: message.guild.name,
+                    details: 'Message flagged and action taken'
+                });
+            }
+        } catch (error) {
+            console.error('Auto-moderation error:', error);
+            logger.createLogEntry('ERROR', 'Auto-moderation failed', {
+                user: message.author,
+                action: 'auto_moderation_error',
+                server: message.guild.name,
+                details: error.message
+            });
         }
     }
 });
@@ -374,6 +426,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 break;
             case 'stats':
                 await handleStats(interaction);
+                break;
+            case 'dashboard':
+                await handleDashboard(interaction);
+                break;
+            case 'automod_settings':
+                await handleAutoModSettings(interaction);
                 break;
         }
     } catch (error) {
@@ -720,6 +778,50 @@ async function handleStats(interaction) {
     const guild = interaction.guild;
     
     const embed = embedManager.createStatsEmbed(guild);
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleDashboard(interaction) {
+    if (!hasPermission(interaction.member)) {
+        const embed = embedManager.createPermissionDeniedEmbed('dashboard');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    // Get server statistics
+    const guild = interaction.guild;
+    const stats = {
+        activeBans: guild.bans.cache.size,
+        warningsToday: 0, // This would be calculated from database
+        autoModActions: autoMod.userViolations.size,
+        blacklistedUsers: 0 // This would be calculated from database
+    };
+
+    const dashboardData = dashboard.createServerDashboard(guild, stats);
+    await interaction.reply(dashboardData);
+}
+
+async function handleAutoModSettings(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You need administrator permissions to configure auto-moderation.',
+            'automod_settings'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const setting = interaction.options.getString('setting');
+    const action = interaction.options.getString('action');
+
+    // Update auto-moderation rule
+    autoMod.updateRule(setting, { action });
+
+    const embed = embedManager.createSuccessEmbed(
+        'Auto-Moderation Updated',
+        `Successfully updated ${setting} to use ${action} action`,
+        { setting, action }
+    );
+
     await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
