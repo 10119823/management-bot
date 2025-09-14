@@ -1,7 +1,11 @@
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits, SlashCommandBuilder, REST, Routes, Collection, Events } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits, SlashCommandBuilder, REST, Routes, Collection, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
 const moment = require('moment');
 const chalk = require('chalk');
+const embedManager = require('./embedUtils');
+const dashboard = require('./dashboard');
+const logger = require('./logger');
+const autoMod = require('./autoMod');
 require('dotenv').config();
 
 // Initialize Discord client
@@ -96,21 +100,7 @@ const sendLogEmbed = async (action, user, moderator, reason = null, additionalIn
     const logChannel = client.channels.cache.get(process.env.LOG_CHANNEL_ID);
     if (!logChannel) return;
 
-    const embed = new EmbedBuilder()
-        .setTitle(`🔨 ${action}`)
-        .setColor(action.includes('ban') ? '#ff0000' : action.includes('kick') ? '#ffaa00' : '#00ff00')
-        .addFields(
-            { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
-            { name: 'Moderator', value: `${moderator.tag}`, inline: true },
-            { name: 'Reason', value: reason || 'No reason provided', inline: false }
-        )
-        .setTimestamp()
-        .setFooter({ text: `Moderation Bot` });
-
-    if (additionalInfo.duration) {
-        embed.addFields({ name: 'Duration', value: additionalInfo.duration, inline: true });
-    }
-
+    const embed = embedManager.createModerationEmbed(action, user, moderator, reason, additionalInfo);
     await logChannel.send({ embeds: [embed] });
 };
 
@@ -276,7 +266,135 @@ const commands = [
     new SlashCommandBuilder()
         .setName('stats')
         .setDescription('View server statistics')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+
+    new SlashCommandBuilder()
+        .setName('dashboard')
+        .setDescription('Open the premium server dashboard')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+
+    new SlashCommandBuilder()
+        .setName('automod')
+        .setDescription('Configure auto-moderation settings')
+        .addStringOption(option =>
+            option.setName('setting')
+                .setDescription('Setting to configure')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'Spam Protection', value: 'spam' },
+                    { name: 'Profanity Filter', value: 'profanity' },
+                    { name: 'Caps Filter', value: 'caps' },
+                    { name: 'Link Filter', value: 'links' },
+                    { name: 'Mention Filter', value: 'mentions' },
+                    { name: 'Invite Filter', value: 'invites' }
+                ))
+        .addStringOption(option =>
+            option.setName('action')
+                .setDescription('Action to take')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'Delete', value: 'delete' },
+                    { name: 'Warn', value: 'warn' },
+                    { name: 'Delete & Warn', value: 'delete_and_warn' },
+                    { name: 'Timeout', value: 'timeout' },
+                    { name: 'Kick', value: 'kick' }
+                ))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    new SlashCommandBuilder()
+        .setName('avatar')
+        .setDescription('View a user\'s avatar in high quality')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user whose avatar you want to view')
+                .setRequired(false))
+        .addStringOption(option =>
+            option.setName('size')
+                .setDescription('Avatar size')
+                .setRequired(false)
+                .addChoices(
+                    { name: 'Small (128px)', value: '128' },
+                    { name: 'Medium (256px)', value: '256' },
+                    { name: 'Large (512px)', value: '512' },
+                    { name: 'Extra Large (1024px)', value: '1024' },
+                    { name: 'Maximum (2048px)', value: '2048' }
+                )),
+
+    new SlashCommandBuilder()
+        .setName('role')
+        .setDescription('Advanced role management system')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('create')
+                .setDescription('Create a new role with advanced customization')
+                .addStringOption(option =>
+                    option.setName('name')
+                        .setDescription('Role name')
+                        .setRequired(true)
+                        .setMaxLength(100))
+                .addStringOption(option =>
+                    option.setName('color')
+                        .setDescription('Role color (hex code, e.g., #ff0000)')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option.setName('mentionable')
+                        .setDescription('Whether the role is mentionable')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option.setName('hoist')
+                        .setDescription('Whether the role is displayed separately')
+                        .setRequired(false))
+                .addStringOption(option =>
+                    option.setName('permissions')
+                        .setDescription('Role permissions (comma-separated)')
+                        .setRequired(false)
+                        .addChoices(
+                            { name: 'Send Messages', value: 'SendMessages' },
+                            { name: 'Manage Messages', value: 'ManageMessages' },
+                            { name: 'Manage Channels', value: 'ManageChannels' },
+                            { name: 'Manage Roles', value: 'ManageRoles' },
+                            { name: 'Kick Members', value: 'KickMembers' },
+                            { name: 'Ban Members', value: 'BanMembers' },
+                            { name: 'Administrator', value: 'Administrator' }
+                        )))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('edit')
+                .setDescription('Edit an existing role')
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role to edit')
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option.setName('name')
+                        .setDescription('New role name')
+                        .setRequired(false)
+                        .setMaxLength(100))
+                .addStringOption(option =>
+                    option.setName('color')
+                        .setDescription('New role color (hex code)')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option.setName('mentionable')
+                        .setDescription('Whether the role is mentionable')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option.setName('hoist')
+                        .setDescription('Whether the role is displayed separately')
+                        .setRequired(false)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('delete')
+                .setDescription('Delete a role')
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role to delete')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('list')
+                .setDescription('List all server roles with details'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
 ];
 
 // Register slash commands
@@ -305,13 +423,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
     // Welcome new members
     const welcomeChannel = client.channels.cache.get(process.env.WELCOME_CHANNEL_ID);
     if (welcomeChannel) {
-        const embed = new EmbedBuilder()
-            .setTitle('🎉 Welcome!')
-            .setDescription(`Welcome to the server, ${member.user}!`)
-            .setColor('#00ff00')
-            .setThumbnail(member.user.displayAvatarURL())
-            .setTimestamp();
-
+        const embed = embedManager.createWelcomeEmbed(member);
         await welcomeChannel.send({ embeds: [embed] });
     }
 
@@ -333,19 +445,35 @@ client.on(Events.MessageCreate, async (message) => {
     // Update last seen
     db.run('UPDATE user_profiles SET last_seen = CURRENT_TIMESTAMP WHERE user_id = ?', [message.author.id]);
 
-    // Auto-moderation for spam
-    const spamThreshold = 5;
-    const spamTimeframe = 10000; // 10 seconds
-
+    // Advanced auto-moderation
     if (message.guild) {
-        const userMessages = message.channel.messages.cache
-            .filter(m => m.author.id === message.author.id && Date.now() - m.createdTimestamp < spamTimeframe)
-            .size();
+        try {
+            const actionTaken = await autoMod.processMessage(message);
+            
+            // Log message activity
+            logger.createLogEntry('INFO', 'Message processed', {
+                user: message.author,
+                action: 'message_sent',
+                server: message.guild.name,
+                details: `Channel: #${message.channel.name}`
+            });
 
-        if (userMessages >= spamThreshold) {
-            await message.delete();
-            const warning = await message.channel.send(`${message.author}, please don't spam!`);
-            setTimeout(() => warning.delete(), 5000);
+            if (actionTaken) {
+                logger.createLogEntry('WARN', 'Auto-moderation action taken', {
+                    user: message.author,
+                    action: 'auto_moderation',
+                    server: message.guild.name,
+                    details: 'Message flagged and action taken'
+                });
+            }
+        } catch (error) {
+            console.error('Auto-moderation error:', error);
+            logger.createLogEntry('ERROR', 'Auto-moderation failed', {
+                user: message.author,
+                action: 'auto_moderation_error',
+                server: message.guild.name,
+                details: error.message
+            });
         }
     }
 });
@@ -394,17 +522,39 @@ client.on(Events.InteractionCreate, async (interaction) => {
             case 'stats':
                 await handleStats(interaction);
                 break;
+            case 'dashboard':
+                await handleDashboard(interaction);
+                break;
+            case 'automod_settings':
+                await handleAutoModSettings(interaction);
+                break;
+            case 'avatar':
+                await handleAvatar(interaction);
+                break;
+            case 'role':
+                await handleRole(interaction);
+                break;
         }
     } catch (error) {
         console.error(chalk.red('Error handling command:'), error);
-        await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Command Error',
+            'There was an error executing this command. Please try again later.',
+            commandName
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 });
 
 // Command implementations
 async function handleBan(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You do not have permission to use this command.',
+            'ban'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const user = interaction.options.getUser('user');
@@ -425,18 +575,30 @@ async function handleBan(interaction) {
         logAction('ban', user.id, interaction.user.id, reason);
         await sendLogEmbed('Ban', user, interaction.user, reason, { duration: 'Permanent' });
 
-        await interaction.reply({ 
-            content: `✅ Successfully banned ${user.tag}${reason !== 'No reason provided' ? ` for: ${reason}` : ''}`,
-            ephemeral: true 
-        });
+        const embed = embedManager.createSuccessEmbed(
+            'User Banned',
+            `Successfully banned **${user.tag}**`,
+            { reason: reason !== 'No reason provided' ? reason : null }
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     } catch (error) {
-        await interaction.reply({ content: 'Failed to ban user. They might have a higher role than me.', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Ban Failed',
+            'Failed to ban user. They might have a higher role than me or there was an error.',
+            'ban'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 }
 
 async function handleKick(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You do not have permission to use this command.',
+            'kick'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const user = interaction.options.getUser('user');
@@ -454,18 +616,26 @@ async function handleKick(interaction) {
         logAction('kick', user.id, interaction.user.id, reason);
         await sendLogEmbed('Kick', user, interaction.user, reason);
 
-        await interaction.reply({ 
-            content: `✅ Successfully kicked ${user.tag}${reason !== 'No reason provided' ? ` for: ${reason}` : ''}`,
-            ephemeral: true 
-        });
+        const embed = embedManager.createSuccessEmbed(
+            'User Kicked',
+            `Successfully kicked **${user.tag}**`,
+            { reason: reason !== 'No reason provided' ? reason : null }
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     } catch (error) {
-        await interaction.reply({ content: 'Failed to kick user. They might have a higher role than me.', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Kick Failed',
+            'Failed to kick user. They might have a higher role than me or there was an error.',
+            'kick'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 }
 
 async function handleUnban(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createPermissionDeniedEmbed('unban');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const userId = interaction.options.getString('user_id');
@@ -476,18 +646,26 @@ async function handleUnban(interaction) {
         logAction('unban', userId, interaction.user.id, reason);
         await sendLogEmbed('Unban', { id: userId, tag: `User ID: ${userId}` }, interaction.user, reason);
 
-        await interaction.reply({ 
-            content: `✅ Successfully unbanned user ${userId}${reason !== 'No reason provided' ? ` for: ${reason}` : ''}`,
-            ephemeral: true 
-        });
+        const embed = embedManager.createSuccessEmbed(
+            'User Unbanned',
+            `Successfully unbanned user **${userId}**`,
+            { reason: reason !== 'No reason provided' ? reason : null }
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     } catch (error) {
-        await interaction.reply({ content: 'Failed to unban user. They might not be banned.', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Unban Failed',
+            'Failed to unban user. They might not be banned or there was an error.',
+            'unban'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 }
 
 async function handleBlacklist(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createPermissionDeniedEmbed('blacklist');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const user = interaction.options.getUser('user');
@@ -498,14 +676,21 @@ async function handleBlacklist(interaction) {
         [user.id, reason, interaction.user.id],
         function(err) {
             if (err) {
-                interaction.reply({ content: 'Failed to blacklist user.', ephemeral: true });
+                const embed = embedManager.createErrorEmbed(
+                    'Blacklist Failed',
+                    'Failed to blacklist user. There was an error.',
+                    'blacklist'
+                );
+                interaction.reply({ embeds: [embed], ephemeral: true });
             } else {
                 logAction('blacklist', user.id, interaction.user.id, reason);
                 sendLogEmbed('Blacklist', user, interaction.user, reason);
-                interaction.reply({ 
-                    content: `✅ Successfully blacklisted ${user.tag}${reason !== 'No reason provided' ? ` for: ${reason}` : ''}`,
-                    ephemeral: true 
-                });
+                const embed = embedManager.createSuccessEmbed(
+                    'User Blacklisted',
+                    `Successfully blacklisted **${user.tag}**`,
+                    { reason: reason !== 'No reason provided' ? reason : null }
+                );
+                interaction.reply({ embeds: [embed], ephemeral: true });
             }
         }
     );
@@ -513,30 +698,43 @@ async function handleBlacklist(interaction) {
 
 async function handleUnblacklist(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createPermissionDeniedEmbed('unblacklist');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const user = interaction.options.getUser('user');
 
     db.run('DELETE FROM blacklist WHERE user_id = ?', [user.id], function(err) {
         if (err) {
-            interaction.reply({ content: 'Failed to unblacklist user.', ephemeral: true });
+            const embed = embedManager.createErrorEmbed(
+                'Unblacklist Failed',
+                'Failed to unblacklist user. There was an error.',
+                'unblacklist'
+            );
+            interaction.reply({ embeds: [embed], ephemeral: true });
         } else if (this.changes === 0) {
-            interaction.reply({ content: 'User is not blacklisted.', ephemeral: true });
+            const embed = embedManager.createErrorEmbed(
+                'User Not Blacklisted',
+                'This user is not currently blacklisted.',
+                'unblacklist'
+            );
+            interaction.reply({ embeds: [embed], ephemeral: true });
         } else {
             logAction('unblacklist', user.id, interaction.user.id);
             sendLogEmbed('Unblacklist', user, interaction.user);
-            interaction.reply({ 
-                content: `✅ Successfully unblacklisted ${user.tag}`,
-                ephemeral: true 
-            });
+            const embed = embedManager.createSuccessEmbed(
+                'User Unblacklisted',
+                `Successfully unblacklisted **${user.tag}**`
+            );
+            interaction.reply({ embeds: [embed], ephemeral: true });
         }
     });
 }
 
 async function handleViewUser(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createPermissionDeniedEmbed('viewuser');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const user = interaction.options.getUser('user');
@@ -546,21 +744,7 @@ async function handleViewUser(interaction) {
             return interaction.reply({ content: 'Error fetching user data.', ephemeral: true });
         }
 
-        const embed = new EmbedBuilder()
-            .setTitle(`👤 User Information: ${user.tag}`)
-            .setThumbnail(user.displayAvatarURL())
-            .setColor('#0099ff')
-            .addFields(
-                { name: 'User ID', value: user.id, inline: true },
-                { name: 'Account Created', value: moment(user.createdAt).format('YYYY-MM-DD HH:mm:ss'), inline: true },
-                { name: 'Warnings', value: (profile?.warnings || 0).toString(), inline: true },
-                { name: 'Kicks', value: (profile?.kicks || 0).toString(), inline: true },
-                { name: 'Bans', value: (profile?.bans || 0).toString(), inline: true },
-                { name: 'Join Date', value: profile?.join_date ? moment(profile.join_date).format('YYYY-MM-DD HH:mm:ss') : 'Unknown', inline: true },
-                { name: 'Last Seen', value: profile?.last_seen ? moment(profile.last_seen).format('YYYY-MM-DD HH:mm:ss') : 'Unknown', inline: true }
-            )
-            .setTimestamp();
-
+        const embed = embedManager.createUserInfoEmbed(user, profile);
         interaction.reply({ embeds: [embed], ephemeral: true });
     });
 }
@@ -694,21 +878,315 @@ async function handleStats(interaction) {
 
     const guild = interaction.guild;
     
-    const embed = new EmbedBuilder()
-        .setTitle('📊 Server Statistics')
-        .setColor('#0099ff')
-        .addFields(
-            { name: 'Total Members', value: guild.memberCount.toString(), inline: true },
-            { name: 'Online Members', value: guild.members.cache.filter(member => member.presence?.status === 'online').size.toString(), inline: true },
-            { name: 'Text Channels', value: guild.channels.cache.filter(channel => channel.type === 0).size.toString(), inline: true },
-            { name: 'Voice Channels', value: guild.channels.cache.filter(channel => channel.type === 2).size.toString(), inline: true },
-            { name: 'Roles', value: guild.roles.cache.size.toString(), inline: true },
-            { name: 'Server Created', value: moment(guild.createdAt).format('YYYY-MM-DD'), inline: true }
-        )
-        .setThumbnail(guild.iconURL())
-        .setTimestamp();
+    const embed = embedManager.createStatsEmbed(guild);
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleDashboard(interaction) {
+    if (!hasPermission(interaction.member)) {
+        const embed = embedManager.createPermissionDeniedEmbed('dashboard');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    // Get server statistics
+    const guild = interaction.guild;
+    const stats = {
+        activeBans: guild.bans.cache.size,
+        warningsToday: 0, // This would be calculated from database
+        autoModActions: autoMod.userViolations.size,
+        blacklistedUsers: 0 // This would be calculated from database
+    };
+
+    const dashboardData = dashboard.createServerDashboard(guild, stats);
+    await interaction.reply(dashboardData);
+}
+
+async function handleAutoModSettings(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You need administrator permissions to configure auto-moderation.',
+            'automod_settings'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const setting = interaction.options.getString('setting');
+    const action = interaction.options.getString('action');
+
+    // Update auto-moderation rule
+    autoMod.updateRule(setting, { action });
+
+    const embed = embedManager.createSuccessEmbed(
+        'Auto-Moderation Updated',
+        `Successfully updated ${setting} to use ${action} action`,
+        { setting, action }
+    );
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleAvatar(interaction) {
+    const user = interaction.options.getUser('user') || interaction.user;
+    const size = interaction.options.getString('size') || '1024';
+
+    try {
+        const embed = embedManager.createAvatarEmbed(user, size);
+        await interaction.reply({ embeds: [embed] });
+    } catch (error) {
+        const embed = embedManager.createErrorEmbed(
+            'Avatar Error',
+            'Failed to fetch avatar. Please try again.',
+            'avatar'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+async function handleRole(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+
+    try {
+        switch (subcommand) {
+            case 'create':
+                await handleRoleCreate(interaction);
+                break;
+            case 'edit':
+                await handleRoleEdit(interaction);
+                break;
+            case 'delete':
+                await handleRoleDelete(interaction);
+                break;
+            case 'list':
+                await handleRoleList(interaction);
+                break;
+        }
+    } catch (error) {
+        console.error('Role command error:', error);
+        const embed = embedManager.createErrorEmbed(
+            'Role Management Error',
+            'An error occurred while processing the role command.',
+            subcommand
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+async function handleRoleCreate(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You need the Manage Roles permission to create roles.',
+            'role_create'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const name = interaction.options.getString('name');
+    const color = interaction.options.getString('color');
+    const mentionable = interaction.options.getBoolean('mentionable') || false;
+    const hoist = interaction.options.getBoolean('hoist') || false;
+    const permissions = interaction.options.getString('permissions');
+
+    try {
+        // Parse color
+        let roleColor = 0;
+        if (color) {
+            const hexColor = color.replace('#', '');
+            roleColor = parseInt(hexColor, 16);
+        }
+
+        // Parse permissions
+        let rolePermissions = 0;
+        if (permissions) {
+            const permissionFlags = permissions.split(',').map(p => p.trim());
+            for (const flag of permissionFlags) {
+                if (PermissionFlagsBits[flag]) {
+                    rolePermissions |= PermissionFlagsBits[flag];
+                }
+            }
+        }
+
+        // Create role
+        const role = await interaction.guild.roles.create({
+            name: name,
+            color: roleColor,
+            mentionable: mentionable,
+            hoist: hoist,
+            permissions: rolePermissions,
+            reason: `Created by ${interaction.user.tag}`
+        });
+
+        // Log the action
+        logger.createLogEntry('INFO', 'Role created', {
+            user: interaction.user,
+            action: 'role_create',
+            server: interaction.guild.name,
+            details: `Role: ${role.name} (${role.id})`
+        });
+
+        const embed = embedManager.createRoleEmbed(role, 'created');
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Role creation error:', error);
+        const embed = embedManager.createErrorEmbed(
+            'Role Creation Failed',
+            'Failed to create role. Please check your permissions and try again.',
+            'role_create'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+async function handleRoleEdit(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You need the Manage Roles permission to edit roles.',
+            'role_edit'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const role = interaction.options.getRole('role');
+    const name = interaction.options.getString('name');
+    const color = interaction.options.getString('color');
+    const mentionable = interaction.options.getBoolean('mentionable');
+    const hoist = interaction.options.getBoolean('hoist');
+
+    try {
+        const updateData = {};
+
+        if (name) updateData.name = name;
+        if (color) {
+            const hexColor = color.replace('#', '');
+            updateData.color = parseInt(hexColor, 16);
+        }
+        if (mentionable !== null) updateData.mentionable = mentionable;
+        if (hoist !== null) updateData.hoist = hoist;
+
+        if (Object.keys(updateData).length === 0) {
+            const embed = embedManager.createErrorEmbed(
+                'No Changes',
+                'No changes were specified for the role.',
+                'role_edit'
+            );
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        await role.edit(updateData, `Edited by ${interaction.user.tag}`);
+
+        // Log the action
+        logger.createLogEntry('INFO', 'Role edited', {
+            user: interaction.user,
+            action: 'role_edit',
+            server: interaction.guild.name,
+            details: `Role: ${role.name} (${role.id})`
+        });
+
+        const embed = embedManager.createRoleEmbed(role, 'edited');
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Role edit error:', error);
+        const embed = embedManager.createErrorEmbed(
+            'Role Edit Failed',
+            'Failed to edit role. Please check your permissions and try again.',
+            'role_edit'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+async function handleRoleDelete(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You need the Manage Roles permission to delete roles.',
+            'role_delete'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const role = interaction.options.getRole('role');
+
+    try {
+        // Check if role is managed
+        if (role.managed) {
+            const embed = embedManager.createErrorEmbed(
+                'Cannot Delete Role',
+                'This role is managed by an integration and cannot be deleted.',
+                'role_delete'
+            );
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        // Check if role is @everyone
+        if (role.id === interaction.guild.id) {
+            const embed = embedManager.createErrorEmbed(
+                'Cannot Delete Role',
+                'The @everyone role cannot be deleted.',
+                'role_delete'
+            );
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        const roleName = role.name;
+        const roleId = role.id;
+
+        await role.delete(`Deleted by ${interaction.user.tag}`);
+
+        // Log the action
+        logger.createLogEntry('INFO', 'Role deleted', {
+            user: interaction.user,
+            action: 'role_delete',
+            server: interaction.guild.name,
+            details: `Role: ${roleName} (${roleId})`
+        });
+
+        const embed = embedManager.createSuccessEmbed(
+            'Role Deleted',
+            `Successfully deleted role **${roleName}**`,
+            { roleId: roleId }
+        );
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Role delete error:', error);
+        const embed = embedManager.createErrorEmbed(
+            'Role Delete Failed',
+            'Failed to delete role. Please check your permissions and try again.',
+            'role_delete'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+}
+
+async function handleRoleList(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You need the Manage Roles permission to list roles.',
+            'role_list'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    try {
+        const roles = interaction.guild.roles.cache.array();
+        const embed = embedManager.createRoleListEmbed(roles);
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Role list error:', error);
+        const embed = embedManager.createErrorEmbed(
+            'Role List Failed',
+            'Failed to fetch role list. Please try again.',
+            'role_list'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
 }
 
 // Login
