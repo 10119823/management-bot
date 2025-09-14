@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits, SlashComma
 const sqlite3 = require('sqlite3').verbose();
 const moment = require('moment');
 const chalk = require('chalk');
+const embedManager = require('./embedUtils');
 require('dotenv').config();
 
 // Initialize Discord client
@@ -96,21 +97,7 @@ const sendLogEmbed = async (action, user, moderator, reason = null, additionalIn
     const logChannel = client.channels.cache.get(process.env.LOG_CHANNEL_ID);
     if (!logChannel) return;
 
-    const embed = new EmbedBuilder()
-        .setTitle(`🔨 ${action}`)
-        .setColor(action.includes('ban') ? '#ff0000' : action.includes('kick') ? '#ffaa00' : '#00ff00')
-        .addFields(
-            { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
-            { name: 'Moderator', value: `${moderator.tag}`, inline: true },
-            { name: 'Reason', value: reason || 'No reason provided', inline: false }
-        )
-        .setTimestamp()
-        .setFooter({ text: `Moderation Bot` });
-
-    if (additionalInfo.duration) {
-        embed.addFields({ name: 'Duration', value: additionalInfo.duration, inline: true });
-    }
-
+    const embed = embedManager.createModerationEmbed(action, user, moderator, reason, additionalInfo);
     await logChannel.send({ embeds: [embed] });
 };
 
@@ -305,13 +292,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
     // Welcome new members
     const welcomeChannel = client.channels.cache.get(process.env.WELCOME_CHANNEL_ID);
     if (welcomeChannel) {
-        const embed = new EmbedBuilder()
-            .setTitle('🎉 Welcome!')
-            .setDescription(`Welcome to the server, ${member.user}!`)
-            .setColor('#00ff00')
-            .setThumbnail(member.user.displayAvatarURL())
-            .setTimestamp();
-
+        const embed = embedManager.createWelcomeEmbed(member);
         await welcomeChannel.send({ embeds: [embed] });
     }
 
@@ -397,14 +378,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
     } catch (error) {
         console.error(chalk.red('Error handling command:'), error);
-        await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Command Error',
+            'There was an error executing this command. Please try again later.',
+            commandName
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 });
 
 // Command implementations
 async function handleBan(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You do not have permission to use this command.',
+            'ban'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const user = interaction.options.getUser('user');
@@ -425,18 +416,30 @@ async function handleBan(interaction) {
         logAction('ban', user.id, interaction.user.id, reason);
         await sendLogEmbed('Ban', user, interaction.user, reason, { duration: 'Permanent' });
 
-        await interaction.reply({ 
-            content: `✅ Successfully banned ${user.tag}${reason !== 'No reason provided' ? ` for: ${reason}` : ''}`,
-            ephemeral: true 
-        });
+        const embed = embedManager.createSuccessEmbed(
+            'User Banned',
+            `Successfully banned **${user.tag}**`,
+            { reason: reason !== 'No reason provided' ? reason : null }
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     } catch (error) {
-        await interaction.reply({ content: 'Failed to ban user. They might have a higher role than me.', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Ban Failed',
+            'Failed to ban user. They might have a higher role than me or there was an error.',
+            'ban'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 }
 
 async function handleKick(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Permission Denied',
+            'You do not have permission to use this command.',
+            'kick'
+        );
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const user = interaction.options.getUser('user');
@@ -454,18 +457,26 @@ async function handleKick(interaction) {
         logAction('kick', user.id, interaction.user.id, reason);
         await sendLogEmbed('Kick', user, interaction.user, reason);
 
-        await interaction.reply({ 
-            content: `✅ Successfully kicked ${user.tag}${reason !== 'No reason provided' ? ` for: ${reason}` : ''}`,
-            ephemeral: true 
-        });
+        const embed = embedManager.createSuccessEmbed(
+            'User Kicked',
+            `Successfully kicked **${user.tag}**`,
+            { reason: reason !== 'No reason provided' ? reason : null }
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     } catch (error) {
-        await interaction.reply({ content: 'Failed to kick user. They might have a higher role than me.', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Kick Failed',
+            'Failed to kick user. They might have a higher role than me or there was an error.',
+            'kick'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 }
 
 async function handleUnban(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createPermissionDeniedEmbed('unban');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const userId = interaction.options.getString('user_id');
@@ -476,18 +487,26 @@ async function handleUnban(interaction) {
         logAction('unban', userId, interaction.user.id, reason);
         await sendLogEmbed('Unban', { id: userId, tag: `User ID: ${userId}` }, interaction.user, reason);
 
-        await interaction.reply({ 
-            content: `✅ Successfully unbanned user ${userId}${reason !== 'No reason provided' ? ` for: ${reason}` : ''}`,
-            ephemeral: true 
-        });
+        const embed = embedManager.createSuccessEmbed(
+            'User Unbanned',
+            `Successfully unbanned user **${userId}**`,
+            { reason: reason !== 'No reason provided' ? reason : null }
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     } catch (error) {
-        await interaction.reply({ content: 'Failed to unban user. They might not be banned.', ephemeral: true });
+        const embed = embedManager.createErrorEmbed(
+            'Unban Failed',
+            'Failed to unban user. They might not be banned or there was an error.',
+            'unban'
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 }
 
 async function handleBlacklist(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createPermissionDeniedEmbed('blacklist');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const user = interaction.options.getUser('user');
@@ -498,14 +517,21 @@ async function handleBlacklist(interaction) {
         [user.id, reason, interaction.user.id],
         function(err) {
             if (err) {
-                interaction.reply({ content: 'Failed to blacklist user.', ephemeral: true });
+                const embed = embedManager.createErrorEmbed(
+                    'Blacklist Failed',
+                    'Failed to blacklist user. There was an error.',
+                    'blacklist'
+                );
+                interaction.reply({ embeds: [embed], ephemeral: true });
             } else {
                 logAction('blacklist', user.id, interaction.user.id, reason);
                 sendLogEmbed('Blacklist', user, interaction.user, reason);
-                interaction.reply({ 
-                    content: `✅ Successfully blacklisted ${user.tag}${reason !== 'No reason provided' ? ` for: ${reason}` : ''}`,
-                    ephemeral: true 
-                });
+                const embed = embedManager.createSuccessEmbed(
+                    'User Blacklisted',
+                    `Successfully blacklisted **${user.tag}**`,
+                    { reason: reason !== 'No reason provided' ? reason : null }
+                );
+                interaction.reply({ embeds: [embed], ephemeral: true });
             }
         }
     );
@@ -513,30 +539,43 @@ async function handleBlacklist(interaction) {
 
 async function handleUnblacklist(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createPermissionDeniedEmbed('unblacklist');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const user = interaction.options.getUser('user');
 
     db.run('DELETE FROM blacklist WHERE user_id = ?', [user.id], function(err) {
         if (err) {
-            interaction.reply({ content: 'Failed to unblacklist user.', ephemeral: true });
+            const embed = embedManager.createErrorEmbed(
+                'Unblacklist Failed',
+                'Failed to unblacklist user. There was an error.',
+                'unblacklist'
+            );
+            interaction.reply({ embeds: [embed], ephemeral: true });
         } else if (this.changes === 0) {
-            interaction.reply({ content: 'User is not blacklisted.', ephemeral: true });
+            const embed = embedManager.createErrorEmbed(
+                'User Not Blacklisted',
+                'This user is not currently blacklisted.',
+                'unblacklist'
+            );
+            interaction.reply({ embeds: [embed], ephemeral: true });
         } else {
             logAction('unblacklist', user.id, interaction.user.id);
             sendLogEmbed('Unblacklist', user, interaction.user);
-            interaction.reply({ 
-                content: `✅ Successfully unblacklisted ${user.tag}`,
-                ephemeral: true 
-            });
+            const embed = embedManager.createSuccessEmbed(
+                'User Unblacklisted',
+                `Successfully unblacklisted **${user.tag}**`
+            );
+            interaction.reply({ embeds: [embed], ephemeral: true });
         }
     });
 }
 
 async function handleViewUser(interaction) {
     if (!hasPermission(interaction.member)) {
-        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+        const embed = embedManager.createPermissionDeniedEmbed('viewuser');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const user = interaction.options.getUser('user');
@@ -546,21 +585,7 @@ async function handleViewUser(interaction) {
             return interaction.reply({ content: 'Error fetching user data.', ephemeral: true });
         }
 
-        const embed = new EmbedBuilder()
-            .setTitle(`👤 User Information: ${user.tag}`)
-            .setThumbnail(user.displayAvatarURL())
-            .setColor('#0099ff')
-            .addFields(
-                { name: 'User ID', value: user.id, inline: true },
-                { name: 'Account Created', value: moment(user.createdAt).format('YYYY-MM-DD HH:mm:ss'), inline: true },
-                { name: 'Warnings', value: (profile?.warnings || 0).toString(), inline: true },
-                { name: 'Kicks', value: (profile?.kicks || 0).toString(), inline: true },
-                { name: 'Bans', value: (profile?.bans || 0).toString(), inline: true },
-                { name: 'Join Date', value: profile?.join_date ? moment(profile.join_date).format('YYYY-MM-DD HH:mm:ss') : 'Unknown', inline: true },
-                { name: 'Last Seen', value: profile?.last_seen ? moment(profile.last_seen).format('YYYY-MM-DD HH:mm:ss') : 'Unknown', inline: true }
-            )
-            .setTimestamp();
-
+        const embed = embedManager.createUserInfoEmbed(user, profile);
         interaction.reply({ embeds: [embed], ephemeral: true });
     });
 }
@@ -694,20 +719,7 @@ async function handleStats(interaction) {
 
     const guild = interaction.guild;
     
-    const embed = new EmbedBuilder()
-        .setTitle('📊 Server Statistics')
-        .setColor('#0099ff')
-        .addFields(
-            { name: 'Total Members', value: guild.memberCount.toString(), inline: true },
-            { name: 'Online Members', value: guild.members.cache.filter(member => member.presence?.status === 'online').size.toString(), inline: true },
-            { name: 'Text Channels', value: guild.channels.cache.filter(channel => channel.type === 0).size.toString(), inline: true },
-            { name: 'Voice Channels', value: guild.channels.cache.filter(channel => channel.type === 2).size.toString(), inline: true },
-            { name: 'Roles', value: guild.roles.cache.size.toString(), inline: true },
-            { name: 'Server Created', value: moment(guild.createdAt).format('YYYY-MM-DD'), inline: true }
-        )
-        .setThumbnail(guild.iconURL())
-        .setTimestamp();
-
+    const embed = embedManager.createStatsEmbed(guild);
     await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
