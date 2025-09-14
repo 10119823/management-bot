@@ -276,6 +276,15 @@ const commands = [
     new SlashCommandBuilder()
         .setName('stats')
         .setDescription('View server statistics')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+
+    new SlashCommandBuilder()
+        .setName('userstats')
+        .setDescription('View detailed statistics for a user')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user to view statistics for')
+                .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
 ];
 
@@ -393,6 +402,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 break;
             case 'stats':
                 await handleStats(interaction);
+                break;
+            case 'userstats':
+                await handleUserStats(interaction);
                 break;
         }
     } catch (error) {
@@ -707,6 +719,98 @@ async function handleStats(interaction) {
         )
         .setThumbnail(guild.iconURL())
         .setTimestamp();
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleUserStats(interaction) {
+    if (!hasPermission(interaction.member)) {
+        return interaction.reply({ content: 'You do not have permission to use this command!', ephemeral: true });
+    }
+
+    const user = interaction.options.getUser('user');
+    
+    // Get user profile data
+    db.get('SELECT * FROM user_profiles WHERE user_id = ?', [user.id], (err, profile) => {
+        if (err) {
+            return interaction.reply({ content: 'Error fetching user profile data.', ephemeral: true });
+        }
+
+        // Get moderation history counts
+        const queries = [
+            { query: 'SELECT COUNT(*) as count FROM moderation_logs WHERE user_id = ? AND action = ?', params: [user.id, 'ban'], name: 'bans' },
+            { query: 'SELECT COUNT(*) as count FROM moderation_logs WHERE user_id = ? AND action = ?', params: [user.id, 'kick'], name: 'kicks' },
+            { query: 'SELECT COUNT(*) as count FROM moderation_logs WHERE user_id = ? AND action = ?', params: [user.id, 'warn'], name: 'warnings' },
+            { query: 'SELECT COUNT(*) as count FROM moderation_logs WHERE user_id = ? AND action = ?', params: [user.id, 'mute'], name: 'timeouts' },
+            { query: 'SELECT COUNT(*) as count FROM moderation_logs WHERE user_id = ? AND action = ?', params: [user.id, 'unban'], name: 'unbans' }
+        ];
+
+        let completedQueries = 0;
+        const stats = {};
+
+        queries.forEach(({ query, params, name }) => {
+            db.get(query, params, (err, row) => {
+                if (err) {
+                    console.error(`Error fetching ${name}:`, err);
+                    stats[name] = 0;
+                } else {
+                    stats[name] = row.count;
+                }
+                
+                completedQueries++;
+                
+                // When all queries are complete, create the embed
+                if (completedQueries === queries.length) {
+                    createUserStatsEmbed(interaction, user, profile, stats);
+                }
+            });
+        });
+    });
+}
+
+async function createUserStatsEmbed(interaction, user, profile, stats) {
+    // Calculate total infractions
+    const totalInfractions = stats.bans + stats.kicks + stats.warnings + stats.timeouts;
+    
+    // Determine user status
+    let status = '🟢 Good Standing';
+    let statusColor = '#00ff00';
+    
+    if (stats.bans > 0) {
+        status = '🔴 Banned';
+        statusColor = '#ff0000';
+    } else if (stats.kicks > 2) {
+        status = '🟡 Multiple Kicks';
+        statusColor = '#ffaa00';
+    } else if (stats.warnings > 3) {
+        status = '🟡 Multiple Warnings';
+        statusColor = '#ffaa00';
+    } else if (totalInfractions > 0) {
+        status = '🟡 Has Infractions';
+        statusColor = '#ffaa00';
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle(`📊 User Statistics: ${user.tag}`)
+        .setThumbnail(user.displayAvatarURL())
+        .setColor(statusColor)
+        .addFields(
+            { name: '👤 User Information', value: `**ID:** ${user.id}\n**Account Created:** ${moment(user.createdAt).format('YYYY-MM-DD HH:mm:ss')}\n**Status:** ${status}`, inline: false },
+            { name: '📈 Infraction Summary', value: `**Total Infractions:** ${totalInfractions}\n**Bans:** ${stats.bans}\n**Kicks:** ${stats.kicks}\n**Warnings:** ${stats.warnings}\n**Timeouts:** ${stats.timeouts}`, inline: true },
+            { name: '📅 Activity', value: `**Join Date:** ${profile?.join_date ? moment(profile.join_date).format('YYYY-MM-DD HH:mm:ss') : 'Unknown'}\n**Last Seen:** ${profile?.last_seen ? moment(profile.last_seen).format('YYYY-MM-DD HH:mm:ss') : 'Unknown'}`, inline: true }
+        )
+        .setTimestamp()
+        .setFooter({ text: `User Statistics • Requested by ${interaction.user.tag}` });
+
+    // Add additional info if user has been unbanned
+    if (stats.unbans > 0) {
+        embed.addFields({ name: '🔄 Restorations', value: `**Unbans:** ${stats.unbans}`, inline: true });
+    }
+
+    // Add warning message for high infraction counts
+    if (totalInfractions > 5) {
+        embed.addFields({ name: '⚠️ Warning', value: 'This user has a high number of infractions.', inline: false });
+    }
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
 }
